@@ -1006,6 +1006,36 @@
   }
 
   /* =============== 17. 事件 =============== */
+
+  /* =============== 16.9 主题：深色 / 浅色 =============== */
+  var THEME_KEY = 'theme';
+  function currentTheme() {
+    var t = document.documentElement.getAttribute('data-theme');
+    return t === 'dark' ? 'dark' : 'light';
+  }
+  function applyTheme(t, animate) {
+    var dark = t === 'dark';
+    if (animate) {
+      document.documentElement.classList.add('theme-anim');
+      setTimeout(function () { document.documentElement.classList.remove('theme-anim'); }, 320);
+    }
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    STORE.write(THEME_KEY, dark ? 'dark' : 'light');
+    var meta = document.getElementById('themeColor');
+    if (meta) meta.setAttribute('content', dark ? '#0b111c' : '#f5f7fc');
+    var btn = document.getElementById('themeToggle');
+    if (btn) {
+      btn.textContent = dark ? '☀ 浅色' : '🌙 深色';
+      btn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+      btn.setAttribute('aria-label', dark ? '切换到浅色模式' : '切换到深色模式');
+    }
+  }
+  function initTheme() {
+    var stored = STORE.read(THEME_KEY, null);
+    var t = stored === 'dark' || stored === 'light' ? stored
+      : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    applyTheme(t, false);
+  }
   /** 首屏 KPI 条：把「今天有几场 / 多久截止 / 一周多少 / 多少适合新生」提到最上面 */
   function renderKpis(n) {
     var host = $('#kpis');
@@ -1202,6 +1232,7 @@
         renderAll();
         break;
       }
+      case 'toggle-theme': applyTheme(currentTheme() === 'dark' ? 'light' : 'dark', true); break;
       case 'clock-reset': state.offsetDays = 0; STORE.write('clockOffsetDays', 0); renderAll(); break;
       default: break;
     }
@@ -1230,6 +1261,7 @@
   }
 
   function init() {
+    initTheme();
     readHash();
     renderAll();
 

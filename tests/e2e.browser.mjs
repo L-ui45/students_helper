@@ -333,6 +333,36 @@ softOk('点「回到现在」后 05 又显示为即将截止（状态随时间�
   const c = [...document.querySelectorAll('.card')].filter(x => x.getAttribute('data-id') === '05')[0];
   return !!c && c.textContent.indexOf('即将截止') >= 0;`));
 
+console.log('\n【深色 / 浅色模式】');
+
+const prefersDark = await evalJs(`return window.matchMedia('(prefers-color-scheme: dark)').matches;`);
+const t0 = await evalJs(`return document.documentElement.getAttribute('data-theme');`);
+const t1 = t0 === 'dark' ? 'light' : 'dark';
+ok('顶栏有主题切换按钮，文案与当前主题一致（当前 ' + t0 + '）', await evalJs(`
+  const b = document.getElementById('themeToggle');
+  return !!b && b.textContent.indexOf('${t0 === 'dark' ? '浅色' : '深色'}') >= 0;`));
+ok('没有本机选择时跟随系统偏好（prefers-color-scheme=' + (prefersDark ? 'dark' : 'light') + '）',
+  t0 === (prefersDark ? 'dark' : 'light'));
+await evalJs(`document.getElementById('themeToggle').click(); return true;`);
+await sleep(360);
+ok('点击可切换主题（' + t0 + ' → ' + t1 + '）', await evalJs(`
+  return document.documentElement.getAttribute('data-theme') === '${t1}' &&
+         document.getElementById('themeToggle').textContent.indexOf('${t1 === 'dark' ? '浅色' : '深色'}') >= 0;`));
+ok('主题选择持久化到 localStorage（JSON 编码，首屏预置脚本能正确读取）', await evalJs(`return JSON.parse(localStorage.getItem('radar.v1.theme')) === '${t1}';`));
+if (t1 !== 'dark') { await evalJs(`document.getElementById('themeToggle').click(); return true;`); await sleep(360); }
+ok('深色配色真正生效（CSS 变量与卡片底色都变暗）', await evalJs(`
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  const card = getComputedStyle(document.querySelector('.card')).backgroundColor;
+  const m = card.match(/[0-9]+/g).map(Number);
+  return bg === '#0b111c' && (m[0] + m[1] + m[2]) / 3 < 100;`));
+await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+await sleep(340);
+ok('深色模式 390px 无横向溢出', await evalJs(`return document.documentElement.scrollWidth <= window.innerWidth + 1;`));
+await send('Emulation.clearDeviceMetricsOverride');
+if (t0 !== 'dark') { await evalJs(`document.getElementById('themeToggle').click(); return true;`); await sleep(340); }
+ok('切回初始主题（' + t0 + '）后状态一致', await evalJs(`
+  return document.documentElement.getAttribute('data-theme') === '${t0}';`));
+
 console.log('\n【移动端与无障碍】');
 
 /* 这一项曾经假通过：只测 mobile:true 时，Chrome 会把布局视口撑宽到内容宽度，

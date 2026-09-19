@@ -30,7 +30,9 @@ const SHOTS = [
   { name: '11-mobile-detail', url: '/#id=19', w: 390, h: 844, mobile: true, dsf: 2, viewport: true },
   { name: '12-mobile-calendar', url: '/#view=calendar', w: 390, h: 844, mobile: true, dsf: 2 },
   { name: '13-detail-06-unified', url: '/#id=06', w: 1280, h: 1000, mobile: false, viewport: true },
-  { name: '14-time-basis', url: '/', w: 1280, h: 360, mobile: false, viewport: true }
+  { name: '14-time-basis', url: '/', w: 1280, h: 360, mobile: false, viewport: true },
+  { name: '15-dark-home', url: '/', w: 1280, h: 900, mobile: false, viewport: true, pre: 'dark' },
+  { name: '16-dark-mobile', url: '/#id=24', w: 390, h: 844, mobile: true, dsf: 2, viewport: true, pre: 'dark' }
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -80,6 +82,12 @@ for (const s of SHOTS) {
     : pathPart + '?s=' + s.name) + frag;
   await page.send('Page.navigate', { url: BASE + bust });
   await sleep(900);
+  // 主题必须确定性指定：这台机器的系统偏好可能是深色，
+  // 靠"点一次切换"会得到相反结果。写入偏好后重新加载，顺带验证首屏预置脚本。
+  const wantTheme = s.pre === 'dark' ? 'dark' : 'light';
+  await page.evalJs(`try { localStorage.setItem('radar.v1.theme', JSON.stringify('${wantTheme}')); } catch (e) {} return true;`);
+  await page.send('Page.reload');
+  await sleep(950);
   await page.evalJs(`return document.querySelectorAll('.card,.todaycard,.tlday,.rawtable').length;`);
   const doc = await page.evalJs(`return { h: document.documentElement.scrollHeight, w: document.documentElement.scrollWidth,
     inner: window.innerWidth, overflow: document.documentElement.scrollWidth > window.innerWidth + 1 };`);

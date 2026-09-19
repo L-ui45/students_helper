@@ -5,7 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>校园机会雷达 · 新生版｜26 条校园活动与机会，一眼看懂什么时候该做什么</title>
 <meta name="description" content="以电脑系统时间为基准，把 26 条校园活动与机会信息整理成新生能看懂、能筛选、能参与、能发布的页面：来源分层、发布内容对照、时间冲突与截止提醒、报名状态与风险提示。">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f5f7fc" id="themeColor">
+<script>
+/* 首屏前置：在 CSS 之前定好主题，避免浅色闪一下 */
+(function () {
+  try {
+    var raw = localStorage.getItem('radar.v1.theme');
+    var t = raw ? JSON.parse(raw) : null;  /* 存的是 JSON，比较前必须解析 */
+    if (t !== 'dark' && t !== 'light') t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+})();
+</script>
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body>
@@ -22,6 +34,7 @@
     <div class="topactions">
       <button class="btn" data-action="open-panel" data-value="agenda">★ 我的日程</button>
       <button class="btn" data-action="open-panel" data-value="publish">＋ 我要发布</button>
+      <button class="btn" id="themeToggle" data-action="toggle-theme" aria-pressed="false" title="在深色 / 浅色之间切换">🌙 深色</button>
       <button class="btn" data-action="open-panel" data-value="quality">信息质量</button>
     </div>
   </div>
