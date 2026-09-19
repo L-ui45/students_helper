@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>校园机会雷达 · 新生版｜26 条校园活动与机会，一眼看懂什么时候该做什么</title>
+<meta name="description" content="以电脑系统时间为基准，把 26 条校园活动与机会信息整理成新生能看懂、能筛选、能参与、能发布的页面：来源分层、发布内容对照、时间冲突与截止提醒、报名状态与风险提示。">
+<meta name="color-scheme" content="light">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<a class="skip" href="#today">跳到「今天可以做什么」</a>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand">
+      <span class="dot" aria-hidden="true">◎</span>
+      <span>校园机会雷达<small>新生版 · 活动与机会信息台</small></span>
+    </div>
+    <span class="spacer"></span>
+    <div class="topactions">
+      <button class="btn" data-action="open-panel" data-value="agenda">★ 我的日程</button>
+      <button class="btn" data-action="open-panel" data-value="publish">＋ 我要发布</button>
+      <button class="btn" data-action="open-panel" data-value="quality">信息质量</button>
+    </div>
+  </div>
+</header>
+
+<!-- 时间基准条 -->
+<div class="basisbar">
+  <div class="wrap">
+    <span class="badge b-brand">时间基准</span>
+    <span id="clockLabel" class="small"></span>
+    <span class="clockctl">
+      <button class="btn" id="clockBack" data-action="clock-shift" data-value="-1" title="把基准时刻往前调一天（演示用，不影响系统时间）">－1 天</button>
+      <button class="btn" id="clockFwd" data-action="clock-shift" data-value="1" title="把基准时刻往后调一天（演示用，不影响系统时间）">＋1 天</button>
+      <button class="btn" id="clockReset" data-action="clock-reset">回到现在</button>
+    </span>
+    <span id="clockNote" class="small muted"></span>
+  </div>
+</div>
+
+<div class="wrap">
+  <!-- 首屏：今天 -->
+  <section class="hero">
+    <h1 id="todayTitle">今天可以做什么</h1>
+    <p class="lead">
+      这 26 条信息全部来自题目给出的校园信息（编号 01–26），内容逐字保留、可逐条对照。
+      发布者没写清楚的地方（费用、地点、截止时间）会明确标成「未注明」（表格中标红），并告诉你该问什么。
+    </p>
+  </section>
+
+  <section class="block" id="today" aria-live="polite">
+    <!-- 今日卡片由 js/app.js 渲染 -->
+  </section>
+  <div class="alerts" id="alerts" role="status"></div>
+
+  <!-- 工具条 -->
+  <div class="toolbar">
+    <div class="searchrow">
+      <div class="searchbox">
+        <label class="hidden" for="q">搜索活动与机会</label>
+        <input id="q" type="search" placeholder="搜标题、标签、主办方、地点……例如「零基础」「志愿」「实验楼」" autocomplete="off">
+        <button class="clear" data-action="clear-all" aria-label="清空搜索与筛选">✕</button>
+      </div>
+    </div>
+
+    <div class="chiprow" id="quickRow" role="group" aria-label="快捷筛选"></div>
+    <div class="chiprow" id="sourceRow" role="group" aria-label="按来源筛选"><span class="label">来源</span></div>
+    <div class="chiprow" id="catRow" role="group" aria-label="按类别筛选"><span class="label">类别</span></div>
+    <div class="chiprow" id="winRow" role="group" aria-label="按时间范围筛选"><span class="label">时间</span></div>
+
+    <div class="resultbar">
+      <span class="count" id="resultCount" aria-live="polite">找到 0 条</span>
+      <span class="small muted" id="resultNote"></span>
+      <label class="small muted" style="display:inline-flex;align-items:center;gap:5px">
+        <input type="checkbox" id="hideNotices"> 隐藏变更通知
+      </label>
+      <span class="spacer"></span>
+      <span class="small muted">排序</span>
+      <span class="seg" id="sortSeg" role="group" aria-label="排序方式"></span>
+      <span class="small muted">视图</span>
+      <span class="seg" id="viewSeg" role="group" aria-label="视图切换"></span>
+    </div>
+  </div>
+
+  <main id="results" class="block" aria-live="polite"></main>
+
+  <!-- 页脚 -->
+  <footer class="foot">
+    <strong>数据来源与口径</strong>
+    <ul>
+      <li>本页所有活动与机会条目均来自<strong>题目提供的校园信息，编号 01–26</strong>；每条都可以在详情或「发布内容对照」视图里看到逐字照录的发布内容。</li>
+      <li>时间基准：<strong>电脑系统时间</strong>（页面右上角实时显示，可用 ±1 天做演示偏移）。题目信息只写了月日（9月18日—10月28日）、没有写年份，因此日期年份按你电脑的年份呈现；系统日期不在该区间时，条目会如实显示未开始或已结束。发布内容里「每周六」「每周三」这类星期说法会在运行时按你电脑的年份核对，对不上会标出来。</li>
+      <li>未提供的信息（如 12 的费用、06 的报名时间、16 的截止时间）一律标注「未注明」（表格中标红），本产品不做推测填充；由发布者给出的信息推算得到的内容（周期场次、结束时间）均标注「推算」。</li>
+      <li>来源分层：只有 21、26 写明由学院发布，22—25 写明学生个人发布，01、05、16 仅据标题推断为校内主办，其余为「来源未注明」。学生个人发布与「本机发布」内容<strong>均未经校方审核</strong>。</li>
+      <li>本产品为课程/考核作品，不是学校官方发布渠道；报名、缴费、出行前请以主办方通知为准。</li>
+    </ul>
+    <p class="tiny">收藏、发布与引导状态只保存在你自己的浏览器本地（localStorage），不会上传；清除本机数据即可全部删除。</p>
+  </footer>
+</div>
+
+<!-- 抽屉 / 遮罩 / 引导层 -->
+<aside class="drawer hidden" id="drawer" role="dialog" aria-modal="true" aria-label="条目详情"></aside>
+<div class="scrim hidden" id="scrim"></div>
+
+<script src="js/data.js"></script>
+<script src="js/logic.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
