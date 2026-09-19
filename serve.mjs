@@ -66,6 +66,8 @@ function clean(s, max) {
 
 /* ---------------- 简易限流 ---------------- */
 const hits = new Map();
+const mockTopics = {};
+let mockSeq = 1;
 function rateLimited(ip) {
   const now = Date.now();
   const arr = (hits.get(ip) || []).filter((t) => now - t < 60000);
@@ -119,6 +121,24 @@ async function handleApi(req, res, url) {
   const path = url.pathname;
 
   if (req.method === 'OPTIONS') return send(res, 204, '');
+
+  /* ---- mock 频道：模拟公网频道（ntfy 协议子集），供测试离线复现「打开即用」链路 ---- */
+  if (path.indexOf('/mock-ntfy/') === 0) {
+    const rest = path.slice('/mock-ntfy/'.length);
+    const topic = rest.replace(/\/json$/, '');
+    if (!mockTopics[topic]) mockTopics[topic] = [];
+    if (req.method === 'POST') {
+      let body = '';
+      await new Promise((res) => { req.on('data', (c) => { body += c; }); req.on('end', res); });
+      const msg = { id: 'm' + (mockSeq++), time: Math.floor(Date.now() / 1000), event: 'message', topic, message: body };
+      mockTopics[topic].push(msg);
+      return sendJson(res, 200, { id: msg.id, topic });
+    }
+    if (req.method === 'GET') {
+      const lines = mockTopics[topic].map((m) => JSON.stringify(m)).join(String.fromCharCode(10));
+      return send(res, 200, lines, { 'content-type': 'application/x-ndjson; charset=utf-8' });
+    }
+  }
 
   if (path === '/api/health' && req.method === 'GET') {
     return sendJson(res, 200, { ok: true, shared: true, items: Object.keys(store.items).length, comments: countAll(), file: DATA_FILE });
@@ -191,7 +211,7 @@ async function handleStatic(req, res, url) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || HOST + ':' + PORT}`);
   try {
-    if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/mock-ntfy/')) return await handleApi(req, res, url);
     return await handleStatic(req, res, url);
   } catch (err) {
     const code = err && err.code === 'ENOENT' ? 404 : 500;
