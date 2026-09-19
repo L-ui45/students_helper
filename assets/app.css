@@ -639,3 +639,12 @@ section.block { margin: 22px 0 24px; }
 .cform textarea { min-height: 68px; }
 .cform .cbar { display: flex; align-items: center; gap: 10px; }
 .cform .cbar .small { flex: 1 1 auto; }
+
+/* 评论区：昵称 + 输入框并排 */
+.cform .crow { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 560px) { .cform .crow { grid-template-columns: 180px minmax(0, 1fr); align-items: start; } }
+.cform input { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--pill); font: inherit; background: #fff; color: var(--ink); }
+[data-theme="dark"] .cform input { background: rgba(255,255,255,.05); }
+.cform input:focus { outline: none; border-color: #bcc8ee; box-shadow: var(--ring); }
+.comments code { background: var(--muted-bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 5px; font-size: 12px; }
+.comments h3 .badge { margin-left: auto; font-weight: 600; }

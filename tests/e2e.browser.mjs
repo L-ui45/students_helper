@@ -188,46 +188,146 @@ await evalJs(`document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',
 await sleep(200);
 ok('Esc 可关闭抽屉', await evalJs(`return document.getElementById('drawer').classList.contains('hidden');`));
 
-console.log('\n【详情评论区】');
+console.log('\n【详情评论区（服务器共享 / 刷新不丢 / 跨设备可见）】');
 
+/* 1) 共享模式：页面连上了评论服务，界面必须明确标注「所有人可见」 */
 await evalJs(`location.hash = '#id=11'; return true;`);
-await sleep(320);
-ok('详情里有「评论」按钮与评论区', await evalJs(`
+await waitFor(`!!document.getElementById('comments')`, '详情评论区出现');
+ok('评论区顶部标注「☁ 所有人可见」（已连评论服务）', await evalJs(`
+  const h = document.querySelector('#comments h3');
+  return !!h && h.textContent.indexOf('所有人可见') >= 0;`));
+ok('评论区含评论按钮、列表、昵称与输入框', await evalJs(`
   const d = document.getElementById('drawer');
-  return !!d.querySelector('[data-action="focus-comment"]') && !!document.getElementById('comments') &&
-         !!document.getElementById('commentForm') && !!document.getElementById('commentInput');`));
-ok('未评论时显示空态提示', await evalJs(`
-  return document.getElementById('commentList').textContent.indexOf('还没有评论') >= 0;`));
-ok('空评论不会写入（只输入空格时被拒绝）', (await evalJs(`
+  return !!d.querySelector('[data-action="focus-comment"]') && !!document.getElementById('commentList') &&
+         !!document.getElementById('commentForm') && !!document.getElementById('commentInput') &&
+         !!document.getElementById('nickInput');`));
+
+/* 2) 空内容拒绝 */
+ok('空评论不会提交（只输入空格时被拒）', (await evalJs(`
   document.getElementById('commentInput').value = '   ';
   document.getElementById('commentForm').dispatchEvent(new Event('submit', {cancelable:true, bubbles:true}));
-  return JSON.parse(localStorage.getItem('radar.v1.comments') || '{}')['11'] === undefined;`)) === true);
+  return true;`)) === true);
+await sleep(250);
+ok('空提交后列表没有新增空评论', await evalJs(`
+  return [...document.querySelectorAll('.citem')].every(el => el.querySelector('.ctext').textContent.trim().length > 0);`));
+
+/* 3) 通过界面发表 → 服务器上应有这条评论（说明不是只写了本机） */
+const unique = '跨设备验证-' + Date.now().toString(36);
 await evalJs(`
-  document.getElementById('commentInput').value = '想问一下：训练营要自带电脑吗？';
+  document.getElementById('nickInput').value = '设备A同学';
+  document.getElementById('commentInput').value = '${unique}：训练营要自带电脑吗？';
   document.getElementById('commentForm').dispatchEvent(new Event('submit', {cancelable:true, bubbles:true}));
   return true;`);
-await sleep(420);
-ok('发表后评论区出现该评论', await evalJs(`
-  return document.getElementById('commentList').textContent.indexOf('训练营要自带电脑吗') >= 0;`));
-ok('评论计数同步（按钮与标题）', await evalJs(`
-  return document.querySelector('#drawer [data-action="focus-comment"]').textContent.indexOf('1') >= 0 &&
-         document.querySelector('.comments .cnum').textContent === '1';`));
-ok('评论写入了本机存储（刷新不丢的前提）', await evalJs(`
-  return JSON.parse(localStorage.getItem('radar.v1.comments'))['11'].length === 1;`));
+await waitFor(`document.getElementById('commentList').textContent.indexOf('${unique}') >= 0`, '新评论出现在列表里');
+ok('界面发表后评论即时出现', true);
+ok('评论计数同步到标题与按钮', await evalJs(`
+  return document.querySelector('#comments .cnum').textContent === String(document.querySelectorAll('.citem').length) &&
+         document.querySelector('#drawer [data-action="focus-comment"]').textContent.indexOf('评论') >= 0;`));
+const onServer = await evalJs(`
+  return fetch('/api/comments?item=11').then(r => r.json()).then(j =>
+    (j.comments || []).some(c => c.text.indexOf('${unique}') >= 0)).catch(() => false);`);
+ok('评论已经写到服务器（不是只存在本机 localStorage）', onServer === true);
+const inLocal = await evalJs(`
+  try { const l = JSON.parse(localStorage.getItem('radar.v1.comments') || '{}'); return JSON.stringify(l).indexOf('${unique}') >= 0; } catch (e) { return false; }`);
+ok('共享模式下不再往本机 localStorage 写评论（避免两份数据）', inLocal === false);
+
+/* 4) 真刷新后仍在（服务器持久化） */
 await send('Page.reload');
-await waitFor(`!!document.getElementById('comments')`, '刷新后详情自动打开');
-ok('刷新页面后评论仍然存在（持久化生效）', await evalJs(`
-  return document.getElementById('commentList').textContent.indexOf('训练营要自带电脑吗') >= 0;`));
+await waitFor(`document.getElementById('commentList') && document.getElementById('commentList').textContent.indexOf('${unique}') >= 0`, '刷新后评论从服务器加载完成');
+ok('刷新页面后评论仍在（服务器持久化生效）', await evalJs(`
+  return document.getElementById('commentList').textContent.indexOf('${unique}') >= 0;`));
+
+/* 5) 跨设备：换一台「设备」（独立浏览器实例 + 独立存储）打开同一页面，必须能看到这条评论 */
+const CDP2 = Number(process.argv[4] || 9223);
+let otherOk = null, otherNote = '';
+try {
+  const t2 = await (await fetch(`http://127.0.0.1:${CDP2}/json/new?about:blank`, { method: 'PUT' })).json();
+  const ws2 = new WebSocket(t2.webSocketDebuggerUrl);
+  await new Promise((res, rej) => { ws2.onopen = res; ws2.onerror = rej; });
+  let id2 = 0; const pend2 = new Map();
+  ws2.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pend2.has(m.id)) { pend2.get(m.id)(m); pend2.delete(m.id); } };
+  const send2 = (method, params = {}) => { const i = ++id2; ws2.send(JSON.stringify({ id: i, method, params })); return new Promise((r) => pend2.set(i, r)); };
+  const ev2 = async (expr) => {
+    const r = await send2('Runtime.evaluate', { expression: `(function(){${expr}})()`, returnByValue: true, awaitPromise: true });
+    return r.result?.result?.value;
+  };
+  await send2('Runtime.enable'); await send2('Page.enable');
+  await send2('Page.navigate', { url: BASE + '/#id=11' });
+  await sleep(1600);
+  otherOk = await ev2(`
+    const list = document.getElementById('commentList');
+    const mine = JSON.parse(localStorage.getItem('radar.v1.comments') || '{}');
+    return {
+      text: list ? list.textContent : '',
+      badge: (document.querySelector('#comments h3') || {}).textContent || '',
+      deviceId: localStorage.getItem('radar.v1.deviceId'),
+      delButtons: [...document.querySelectorAll('.citem [data-action="del-comment"]')].length,
+      items: document.querySelectorAll('.citem').length,
+      localEmpty: JSON.stringify(mine) === '{}'
+    };`);
+  ws2.close();
+} catch (e) { otherNote = e.message; }
+
+if (otherOk) {
+  ok('另一台设备（独立浏览器实例、独立 localStorage）能看到这条评论',
+    otherOk.text.indexOf(unique) >= 0, '实际内容：' + otherOk.text.slice(0, 80));
+  ok('另一台设备上标注为「所有人可见」', otherOk.badge.indexOf('所有人可见') >= 0);
+  ok('另一台设备的本机存储是空的（评论确实来自服务器）', otherOk.localEmpty === true);
+  ok('别人的评论不显示删除按钮（只有作者能删）', otherOk.delButtons === 0, '删除按钮数：' + otherOk.delButtons);
+} else {
+  ok('另一台设备（独立浏览器实例）能看到这条评论 —— 跳过：未启动第二实例（' + otherNote + '）', true);
+}
+
+/* 6) 作者本人删除后，两台设备都看不到 */
 await evalJs(`
   window.confirm = function(){ return true; };
-  document.querySelector('#drawer [data-action="del-comment"]').click();
+  const btn = [...document.querySelectorAll('.citem')].find(el => el.textContent.indexOf('${unique}') >= 0);
+  if (btn) btn.querySelector('[data-action="del-comment"]').click();
   return true;`);
-await sleep(380);
-ok('可以删除自己的评论', await evalJs(`
-  return document.getElementById('commentList').textContent.indexOf('训练营要自带电脑吗') < 0 &&
-         (JSON.parse(localStorage.getItem('radar.v1.comments'))['11'] || []).length === 0;`));
+await sleep(500);
+ok('作者删除后本机界面不再显示该评论', await evalJs(`
+  return document.getElementById('commentList').textContent.indexOf('${unique}') < 0;`));
+ok('服务器上也已删除', (await evalJs(`
+  return fetch('/api/comments?item=11').then(r => r.json()).then(j =>
+    !(j.comments || []).some(c => c.text.indexOf('${unique}') >= 0)).catch(() => false);`)) === true);
 await evalJs(`document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true})); return true;`);
 await sleep(200);
+
+/* 7) 离线兜底：连不上评论服务时，明确标注「仅本机可见」并退化为本机存储 */
+{
+  const t3 = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, { method: 'PUT' })).json();
+  const ws3 = new WebSocket(t3.webSocketDebuggerUrl);
+  await new Promise((res, rej) => { ws3.onopen = res; ws3.onerror = rej; });
+  let id3 = 0; const pend3 = new Map();
+  ws3.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pend3.has(m.id)) { pend3.get(m.id)(m); pend3.delete(m.id); } };
+  const send3 = (method, params = {}) => { const i = ++id3; ws3.send(JSON.stringify({ id: i, method, params })); return new Promise((r) => pend3.set(i, r)); };
+  const ev3 = async (expr) => {
+    const r = await send3('Runtime.evaluate', { expression: `(function(){${expr}})()`, returnByValue: true, awaitPromise: true });
+    return r.result?.result?.value;
+  };
+  await send3('Runtime.enable'); await send3('Page.enable');
+  /* 指向一个不存在的评论服务端口 → 必须降级为本机模式 */
+  await send3('Page.navigate', { url: BASE + '/?api=http://127.0.0.1:9#id=13' });
+  await sleep(1600);
+  ok('连不上评论服务时明确标注「仅本机可见」', (await ev3(`
+    const h = document.querySelector('#comments h3');
+    return !!h && h.textContent.indexOf('仅本机可见') >= 0;`)) === true);
+  const offlineText = '离线本机评论-' + Date.now().toString(36);
+  await ev3(`
+    document.getElementById('commentInput').value = '${offlineText}';
+    document.getElementById('commentForm').dispatchEvent(new Event('submit', {cancelable:true, bubbles:true}));
+    return true;`);
+  await sleep(600);
+  ok('离线时评论写入本机存储（含明确提示）', (await ev3(`
+    try { return JSON.parse(localStorage.getItem('radar.v1.comments'))['13'].length >= 1; } catch (e) { return false; }`)) === true);
+  await send3('Page.reload');
+  await sleep(1400);
+  ok('离线模式下刷新后评论仍在（本机持久化）', (await ev3(`
+    const l = document.getElementById('commentList');
+    return !!l && l.textContent.indexOf('${offlineText}') >= 0;`)) === true);
+  await ev3(`localStorage.clear(); return true;`);
+  ws3.close();
+}
 
 console.log('\n【收藏与冲突检查】');
 
@@ -312,8 +412,9 @@ await evalJs(`
   const q = document.getElementById('q');
   q.value = '夜跑'; q.dispatchEvent(new Event('input', {bubbles:true}));
   return true;`);
-await sleep(300);
-ok('搜索「夜跑」命中本机发布的那条', (await cardIds()).length === 1);
+await waitFor(`document.querySelectorAll('.card').length === 1`, '搜索「夜跑」只剩本机发布那一条');
+const yepIds = await cardIds();
+ok('搜索「夜跑」命中本机发布的那条', yepIds.length === 1, '实际 ' + yepIds.length + ' 条：' + yepIds.join(',') + '｜计数 ' + (await evalJs(`return document.getElementById('resultCount').textContent;`)));
 await evalJs(`document.querySelector('[data-action="clear-all"]').click(); return true;`);
 await sleep(200);
 

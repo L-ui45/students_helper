@@ -93,25 +93,117 @@
   var published = STORE.read('published', []);
   var favorites = STORE.read('favorites', []);
 
-  /* =============== 评论（只存本机，刷新不丢） =============== */
-  var comments = STORE.read('comments', {});
-  function commentsOf(id) {
-    return (comments[id] || []).slice().sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  /* =============== 评论：服务器共享 + 本机离线兜底 =============== */
+  var NICK_KEY = 'nickname';
+  var DEVICE_KEY = 'deviceId';
+  var deviceId = STORE.read(DEVICE_KEY, null);
+  if (!deviceId) {
+    deviceId = 'd' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+    STORE.write(DEVICE_KEY, deviceId);
   }
-  function commentCount(id) { return (comments[id] || []).length; }
-  function addComment(id, text) {
-    var list = comments[id] || (comments[id] = []);
+  var localComments = STORE.read('comments', {});
+  var serverComments = {};   // itemId → [comment]（来自服务器，所有人共享）
+  var loadedItems = {};      // itemId → true 表示已从服务器拉过一次
+  var sharedMode = false;    // 是否连上评论服务：决定评论是「所有人可见」还是「仅本机可见」
+
+  /* 评论服务地址：可用 ?api=http://host:port 指定并记住；http(s) 下默认同源；file:// 下试本机 8017 */
+  var apiBase = (function () {
+    try {
+      var m = /(^|[?&])api=([^&]+)/.exec(location.search);
+      if (m) { var v = decodeURIComponent(m[2]).replace(/\/+$/, ''); STORE.write('apiBase', v); return v; }
+      var saved = STORE.read('apiBase', null);
+      if (saved) return saved;
+      if (location.protocol === 'http:' || location.protocol === 'https:') return '';
+      return 'http://127.0.0.1:8017';
+    } catch (e) { return ''; }
+  })();
+
+  function nickname() { return STORE.read(NICK_KEY, '') || '匿名同学'; }
+  function saveNickname(v) { STORE.write(NICK_KEY, String(v || '').slice(0, 24)); }
+
+  function apiFetch(path, opts) {
+    opts = opts || {};
+    var init = { method: opts.method || 'GET', headers: { 'content-type': 'application/json' } };
+    if (opts.body) init.body = JSON.stringify(opts.body);
+    var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 3500);
+    if (ctl) init.signal = ctl.signal;
+    return fetch(apiBase + path, init).then(function (r) {
+      clearTimeout(timer);
+      return r.json().then(function (j) {
+        if (!r.ok) throw new Error((j && j.error) || ('HTTP ' + r.status));
+        return j;
+      });
+    }, function (e) { clearTimeout(timer); throw e; });
+  }
+
+  function detectShared() {
+    return apiFetch('/api/health').then(function (j) {
+      sharedMode = !!(j && j.ok);
+      return sharedMode;
+    }).catch(function () { sharedMode = false; return false; });
+  }
+
+  function loadServerComments(id) {
+    if (!sharedMode) return Promise.resolve(false);
+    return apiFetch('/api/comments?item=' + encodeURIComponent(id) + '&device=' + encodeURIComponent(deviceId))
+      .then(function (j) { serverComments[id] = (j && j.comments) || []; loadedItems[id] = true; return true; })
+      .catch(function () { return false; });
+  }
+
+  /** 服务器评论 + 本机离线评论（离线兜底时两者都会显示） */
+  function commentList(id) {
+    var server = sharedMode ? (serverComments[id] || []) : [];
+    var local = (localComments[id] || []).map(function (c) {
+      return { id: c.id, at: c.at, text: c.text, author: c.author || '本机用户', mine: true, local: true };
+    });
+    return server.concat(local);
+  }
+  function commentCount(id) { return commentList(id).length; }
+
+  function addLocalComment(id, text, author) {
+    var list = localComments[id] || (localComments[id] = []);
     list.push({
       id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      at: new Date().toISOString(),
-      text: String(text).slice(0, 300)
+      at: new Date().toISOString(), text: String(text).slice(0, 300), author: author || '本机用户'
     });
-    STORE.write('comments', comments);
+    STORE.write('comments', localComments);
   }
-  function removeComment(id, cid) {
-    comments[id] = (comments[id] || []).filter(function (c) { return c.id !== cid; });
-    STORE.write('comments', comments);
+  function removeLocalComment(id, cid) {
+    localComments[id] = (localComments[id] || []).filter(function (c) { return c.id !== cid; });
+    STORE.write('comments', localComments);
   }
+
+  /** 发表：优先发服务器（所有人可见）；服务器不可用则退回本机并明确告知 */
+  function postComment(id, text, author) {
+    saveNickname(author);
+    if (sharedMode) {
+      return apiFetch('/api/comments', { method: 'POST', body: { item: id, text: text, author: author, device: deviceId } })
+        .then(function (j) {
+          var list = serverComments[id] || (serverComments[id] = []);
+          list.unshift(j.comment);
+          return { shared: true };
+        })
+        .catch(function () {
+          addLocalComment(id, text, author);
+          sharedMode = false;
+          return { shared: false, fellBack: true };
+        });
+    }
+    addLocalComment(id, text, author);
+    return Promise.resolve({ shared: false });
+  }
+
+  function deleteComment(id, cid, isLocal) {
+    if (isLocal || !sharedMode) { removeLocalComment(id, cid); return Promise.resolve(true); }
+    return apiFetch('/api/comments', { method: 'DELETE', body: { item: id, id: cid, device: deviceId } })
+      .then(function () {
+        serverComments[id] = (serverComments[id] || []).filter(function (c) { return c.id !== cid; });
+        return true;
+      })
+      .catch(function (e) { toast('删除失败：' + ((e && e.message) || '服务器不可用')); return false; });
+  }
+
   function relTime(iso) {
     var t = new Date(iso).getTime();
     if (isNaN(t)) return '';
@@ -123,25 +215,79 @@
     var d = new Date(t);
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   }
+
   function commentsHtml(rec) {
-    var list = commentsOf(rec.id);
+    var list = commentList(rec.id);
+    var modeBadge = sharedMode
+      ? '<span class="badge b-good" title="已连接评论服务，评论会同步给其他设备上的访问者">☁ 所有人可见</span>'
+      : '<span class="badge b-warn" title="未连接评论服务：评论只存在本机浏览器中">⚠ 仅本机可见</span>';
+    var rows = list.length ? list.map(function (c) {
+      return '<article class="citem">' +
+        '<div class="chead"><span class="who">' + esc(c.author || '匿名同学') + '</span>' +
+        '<span class="when" title="' + esc(new Date(c.at).toLocaleString()) + '">' + esc(relTime(c.at)) + '</span>' +
+        (c.local ? '<span class="badge b-outline">本机</span>' : '') +
+        (c.mine === false ? '' : '<button class="btn sm danger" data-action="del-comment" data-id="' + esc(rec.id) + '" data-cid="' + esc(c.id) + '" data-local="' + (c.local ? '1' : '') + '">删除</button>') +
+        '</div><div class="ctext">' + decorate(esc(c.text)) + '</div></article>';
+    }).join('') : (sharedMode && !loadedItems[rec.id]
+      ? '<p class="small muted" id="commentLoading">正在从服务器加载评论…</p>'
+      : '<p class="small muted">还没有评论。可以写下你的问题或补充，例如「训练营要不要自带电脑？」。</p>');
+
     return '<section class="comments" id="comments">' +
-      '<h3>💬 评论<span class="cnum">' + list.length + '</span></h3>' +
-      '<div class="clist" id="commentList">' +
-      (list.length ? list.map(function (c) {
-        return '<article class="citem">' +
-          '<div class="chead"><span class="who">本机用户</span>' +
-          '<span class="when" title="' + esc(new Date(c.at).toLocaleString()) + '">' + esc(relTime(c.at)) + '</span>' +
-          '<button class="btn sm danger" data-action="del-comment" data-id="' + esc(rec.id) + '" data-cid="' + esc(c.id) + '">删除</button></div>' +
-          '<div class="ctext">' + decorate(esc(c.text)) + '</div></article>';
-      }).join('') : '<p class="small muted">还没有评论。可以写下你的问题或补充，例如「训练营要不要自带电脑？」。</p>') +
-      '</div>' +
+      '<h3>💬 评论<span class="cnum">' + list.length + '</span>' + modeBadge + '</h3>' +
+      (sharedMode ? '' : '<p class="small muted" style="margin:0 0 9px">' +
+        '当前未连上评论服务，评论只保存在本机。要让其他设备的同学也能看到，请启动共享服务：' +
+        '<code>node serve.mjs 8017 0.0.0.0</code>，然后用 <code>http://&lt;你的电脑IP&gt;:8017</code> 访问。</p>') +
+      '<div class="clist" id="commentList">' + rows + '</div>' +
       '<form class="cform" id="commentForm">' +
+      '<div class="crow">' +
+      '<label class="hidden" for="nickInput">昵称</label>' +
+      '<input id="nickInput" maxlength="24" placeholder="昵称（可留空）" value="' + esc(STORE.read(NICK_KEY, '')) + '">' +
       '<label class="hidden" for="commentInput">写评论</label>' +
-      '<textarea id="commentInput" maxlength="300" placeholder="写下你的评论 / 提问 / 补充信息（保存在本机，刷新不丢）"></textarea>' +
-      '<div class="cbar"><span class="small muted">评论只保存在你自己的浏览器里，不会上传</span>' +
-      '<button class="btn primary" type="submit">发表评论</button></div>' +
+      '<textarea id="commentInput" maxlength="300" placeholder="写下你的评论 / 提问 / 补充信息"></textarea>' +
+      '</div>' +
+      '<div class="cbar"><span class="small muted">' +
+      (sharedMode ? '提交后会同步到服务器，其他设备的同学刷新即可看到' : '提交后只保存在本机浏览器') +
+      '</span><button class="btn primary" type="submit">发表评论</button></div>' +
       '</form></section>';
+  }
+
+  /** 打开详情后异步拉取共享评论，再局部刷新评论区 */
+  function refreshComments(id) {
+    return loadServerComments(id).then(function (ok) {
+      if (state.id === id) paintComments(id);
+      return ok;
+    });
+  }
+
+  /** 只重绘评论区（服务器返回后局部刷新，不打断阅读位置） */
+  function paintComments(id) {
+    var host = $('#comments');
+    var rec = findRecord(id);
+    if (!host || !rec) return;
+    host.outerHTML = commentsHtml(rec);
+    bindCommentForm(rec);
+  }
+
+  function bindCommentForm(rec) {
+    var cform = $('#commentForm');
+    if (!cform) return;
+    cform.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var box = $('#commentInput');
+      var text = box ? String(box.value || '').trim() : '';
+      if (!text) { toast('评论内容不能为空'); if (box) box.focus(); return; }
+      var nick = String(($('#nickInput') || {}).value || '').trim() || nickname();
+      var btn = cform.querySelector('button[type="submit"]');
+      if (btn) { btn.disabled = true; btn.textContent = '提交中…'; }
+      postComment(rec.id, text, nick).then(function (r) {
+        var summary = findRecord(rec.id);
+        if (state.id === rec.id) { paintComments(rec.id); }
+        if (state.view === 'cards') renderResults();
+        var bar = $('#drawer [data-action="focus-comment"]');
+        if (bar && summary) bar.textContent = '💬 评论' + (commentCount(rec.id) ? ' ' + commentCount(rec.id) : '');
+        toast(r.shared ? '评论已发表：所有人都能看到' : (r.fellBack ? '服务器不可用，评论已保存在本机' : '评论已保存在本机（未连服务器）'));
+      });
+    });
   }
 
   function buildLocalRecord(p) {
@@ -754,21 +900,9 @@
     document.body.classList.add('no-scroll');
     $('.close', drawer).focus();
 
-    /* 评论表单：提交后写本机存储并重绘，刷新不丢 */
-    var cform = $('#commentForm');
-    if (cform) {
-      cform.addEventListener('submit', function (ev) {
-        ev.preventDefault();
-        var box = $('#commentInput');
-        var text = box ? String(box.value || '').trim() : '';
-        if (!text) { toast('评论内容不能为空'); if (box) box.focus(); return; }
-        addComment(rec.id, text);
-        openDetail(rec.id, false);
-        toast('评论已发表（保存在本机，刷新不丢）');
-        var sec = $('#comments');
-        if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
-    }
+    bindCommentForm(rec);
+    /* 连上服务器时拉取该条目的共享评论并局部刷新 */
+    if (sharedMode) refreshComments(rec.id);
   }
 
   function closeDetail(keepHash) {
@@ -1305,9 +1439,11 @@
       }
       case 'del-comment': {
         if (window.confirm('删除这条评论？')) {
-          removeComment(id, el.getAttribute('data-cid'));
-          openDetail(id, false);
-          toast('已删除评论');
+          var cid = el.getAttribute('data-cid');
+          var isLocal = el.getAttribute('data-local') === '1';
+          deleteComment(id, cid, isLocal).then(function (ok) {
+            if (ok) { if (state.id === id) paintComments(id); toast('已删除评论'); }
+          });
         }
         break;
       }
@@ -1341,6 +1477,11 @@
 
   function init() {
     initTheme();
+    /* 探测评论服务：连上=评论所有人可见；连不上=仅本机可见（界面会明确标注） */
+    detectShared().then(function () {
+      renderResults();
+      if (state.id) refreshComments(state.id);
+    });
     readHash();
     renderAll();
 

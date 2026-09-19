@@ -91,7 +91,8 @@ for (const s of SHOTS) {
   await sleep(950);
   if (s.pre === 'comment') {
     await page.evalJs("const b=document.getElementById('commentInput'); if(b){b.value='想问一下：训练营要自带电脑吗？需要自己带笔记本吗？'; document.getElementById('commentForm').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));} return true;");
-    await sleep(500);
+    await page.evalJs("const c=document.getElementById('comments'); if(c) c.scrollIntoView({block:'center'}); return true;");
+    await sleep(600);
   }
   await page.evalJs(`return document.querySelectorAll('.card,.todaycard,.tlday,.rawtable').length;`);
   const doc = await page.evalJs(`return { h: document.documentElement.scrollHeight, w: document.documentElement.scrollWidth,
