@@ -61,23 +61,23 @@ async function openTarget() {
 }
 
 await mkdir(OUT, { recursive: true });
-const page = await openTarget();
 console.log(`截图输出目录：${OUT}`);
 
-// 每次截图前清空本机数据，保证截图是「首次打开」的干净状态
-await page.send('Page.navigate', { url: BASE + '/' });
-await sleep(700);
-await page.evalJs(`try { localStorage.clear(); } catch (e) {} return true;`);
+
 
 for (const s of SHOTS) {
+  const page = await openTarget();
   await page.send('Emulation.setDeviceMetricsOverride', {
     width: s.w, height: s.h, deviceScaleFactor: s.dsf || 1, mobile: !!s.mobile
   });
   // 每次都用唯一的 query 参数，强制整页重新加载：
   // 纯 fragment 变化属于同文档导航，不会重新初始化应用
-  const bust = s.url.indexOf('?') >= 0
-    ? s.url.replace('?', '?s=' + s.name + '&')
-    : s.url + '?s=' + s.name;
+  // 注意必须先拆出 hash 再拼 query，否则 ?s= 会落到 # 后面，深链（#id=/#panel=）就失效了
+  const [pathPart, ...fragParts] = s.url.split('#');
+  const frag = fragParts.length ? '#' + fragParts.join('#') : '';
+  const bust = (pathPart.indexOf('?') >= 0
+    ? pathPart.replace('?', '?s=' + s.name + '&')
+    : pathPart + '?s=' + s.name) + frag;
   await page.send('Page.navigate', { url: BASE + bust });
   await sleep(900);
   await page.evalJs(`return document.querySelectorAll('.card,.todaycard,.tlday,.rawtable').length;`);
@@ -86,10 +86,14 @@ for (const s of SHOTS) {
   const clip = s.viewport
     ? { x: 0, y: 0, width: s.w, height: s.h, scale: 1 }
     : { x: 0, y: 0, width: s.w, height: Math.min(doc.h, 4000), scale: 1 };
-  const shot = await page.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip });
+  // 视口类截图（抽屉/弹窗是 position:fixed）必须用普通视口捕获：
+  // captureBeyondViewport 会丢掉固定定位图层，导致截图里看不到抽屉与弹窗
+  const shot = s.viewport
+    ? await page.send('Page.captureScreenshot', { format: 'png' })
+    : await page.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip });
   await writeFile(join(OUT, s.name + '.png'), Buffer.from(shot.result.data, 'base64'));
   console.log(`  ${s.name}.png  ${s.w}x${Math.round(clip.height)}  横向溢出=${doc.overflow ? '有（文档 ' + doc.w + ' > 视口 ' + doc.inner + '）' : '无'}`);
+  page.close();
 }
-page.close();
 console.log('完成。');
 process.exit(0);

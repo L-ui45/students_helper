@@ -42,50 +42,54 @@
 </div>
 
 <div class="wrap">
-  <!-- 首屏：今天 -->
-  <section class="hero">
-    <h1 id="todayTitle">今天可以做什么</h1>
-    <p class="lead">
-      这 26 条信息全部来自题目给出的校园信息（编号 01–26），内容逐字保留、可逐条对照。
-      发布者没写清楚的地方（费用、地点、截止时间）会明确标成「未注明」（表格中标红），并告诉你该问什么。
-    </p>
-  </section>
+  <div class="shell">
+    <div class="main-col">
+      <!-- 首屏：今天 -->
+      <section class="hero">
+        <h1 id="todayTitle">今天可以做什么</h1>
+        <p class="lead">
+          这 26 条信息全部来自题目给出的校园信息（编号 01–26），内容逐字保留、可逐条对照。
+          发布者没写清楚的地方（费用、地点、截止时间）会明确标成「未注明」（表格中标红），并告诉你该问什么。
+        </p>
+        <div class="kpis" id="kpis"></div>
+      </section>
 
-  <section class="block" id="today" aria-live="polite">
-    <!-- 今日卡片由 js/app.js 渲染 -->
-  </section>
-  <div class="alerts" id="alerts" role="status"></div>
+      <section class="block" id="today" aria-live="polite">
+        <!-- 今日卡片由 js/app.js 渲染 -->
+      </section>
+      <div class="alerts" id="alerts" role="status"></div>
 
-  <!-- 工具条 -->
-  <div class="toolbar">
-    <div class="searchrow">
-      <div class="searchbox">
-        <label class="hidden" for="q">搜索活动与机会</label>
-        <input id="q" type="search" placeholder="搜标题、标签、主办方、地点……例如「零基础」「志愿」「实验楼」" autocomplete="off">
-        <button class="clear" data-action="clear-all" aria-label="清空搜索与筛选">✕</button>
+      <!-- 工具条 -->
+      <div class="toolbar">
+        <div class="searchrow">
+          <div class="searchbox">
+            <label class="hidden" for="q">搜索活动与机会</label>
+            <span class="icon" aria-hidden="true">⌕</span>
+            <input id="q" type="search" placeholder="搜标题、标签、主办方、地点……例如「零基础」「志愿」「实验楼」" autocomplete="off">
+            <button class="clear" data-action="clear-all" aria-label="清空搜索与筛选">✕</button>
+          </div>
+        </div>
+
+        <div class="chiprow" id="quickRow" role="group" aria-label="快捷筛选"></div>
+        <div class="chiprow" id="sourceRow" role="group" aria-label="按来源筛选"><span class="label">来源</span></div>
+        <div class="chiprow" id="catRow" role="group" aria-label="按类别筛选"><span class="label">类别</span></div>
+        <div class="chiprow" id="winRow" role="group" aria-label="按时间范围筛选"><span class="label">时间</span></div>
+
+        <div class="resultbar">
+          <span class="count" id="resultCount" aria-live="polite">找到 0 条</span>
+          <span class="small muted" id="resultNote"></span>
+          <label class="small muted" style="display:inline-flex;align-items:center;gap:5px">
+            <input type="checkbox" id="hideNotices"> 隐藏变更通知
+          </label>
+          <span class="spacer"></span>
+          <span class="small muted">排序</span>
+          <span class="seg" id="sortSeg" role="group" aria-label="排序方式"></span>
+          <span class="small muted">视图</span>
+          <span class="seg" id="viewSeg" role="group" aria-label="视图切换"></span>
+        </div>
       </div>
-    </div>
 
-    <div class="chiprow" id="quickRow" role="group" aria-label="快捷筛选"></div>
-    <div class="chiprow" id="sourceRow" role="group" aria-label="按来源筛选"><span class="label">来源</span></div>
-    <div class="chiprow" id="catRow" role="group" aria-label="按类别筛选"><span class="label">类别</span></div>
-    <div class="chiprow" id="winRow" role="group" aria-label="按时间范围筛选"><span class="label">时间</span></div>
-
-    <div class="resultbar">
-      <span class="count" id="resultCount" aria-live="polite">找到 0 条</span>
-      <span class="small muted" id="resultNote"></span>
-      <label class="small muted" style="display:inline-flex;align-items:center;gap:5px">
-        <input type="checkbox" id="hideNotices"> 隐藏变更通知
-      </label>
-      <span class="spacer"></span>
-      <span class="small muted">排序</span>
-      <span class="seg" id="sortSeg" role="group" aria-label="排序方式"></span>
-      <span class="small muted">视图</span>
-      <span class="seg" id="viewSeg" role="group" aria-label="视图切换"></span>
-    </div>
-  </div>
-
-  <main id="results" class="block" aria-live="polite"></main>
+      <main id="results" class="block" aria-live="polite"></main>
 
   <!-- 页脚 -->
   <footer class="foot">
@@ -97,11 +101,16 @@
       <li>来源分层：只有 21、26 写明由学院发布，22—25 写明学生个人发布，01、05、16 仅据标题推断为校内主办，其余为「来源未注明」。学生个人发布与「本机发布」内容<strong>均未经校方审核</strong>。</li>
       <li>本产品为课程/考核作品，不是学校官方发布渠道；报名、缴费、出行前请以主办方通知为准。</li>
     </ul>
-    <p class="tiny">收藏、发布与引导状态只保存在你自己的浏览器本地（localStorage），不会上传；清除本机数据即可全部删除。</p>
+    <p class="tiny">收藏、发布等本机数据只保存在你自己的浏览器本地（localStorage），不会上传；清除本机数据即可全部删除。</p>
   </footer>
+    </div><!-- /.main-col -->
+
+    <!-- 速览侧栏（宽屏粘性，窄屏落到列表之后） -->
+    <aside class="rail" id="rail" aria-label="速览"></aside>
+  </div><!-- /.shell -->
 </div>
 
-<!-- 抽屉 / 遮罩 / 引导层 -->
+<!-- 抽屉 / 遮罩 -->
 <aside class="drawer hidden" id="drawer" role="dialog" aria-modal="true" aria-label="条目详情"></aside>
 <div class="scrim hidden" id="scrim"></div>
 

@@ -1006,11 +1006,104 @@
   }
 
   /* =============== 17. 事件 =============== */
+  /** 首屏 KPI 条：把「今天有几场 / 多久截止 / 一周多少 / 多少适合新生」提到最上面 */
+  function renderKpis(n) {
+    var host = $('#kpis');
+    if (!host) return;
+    var recs = allRecords();
+    var todayYmd = L.ymd(n);
+    var todayCount = recs.filter(function (r) {
+      return L.entriesOf(r).some(function (e) { return e.date === todayYmd && e.kind === 'session'; });
+    }).length;
+    var closing = recs.filter(function (r) { return L.signupState(r, n).code === 'closing_soon'; }).length;
+    var week = 0, seen = {};
+    var end7 = L.endOfDay(L.addDays(n, 6));
+    recs.forEach(function (r) {
+      L.entriesOf(r).forEach(function (e) {
+        if (e.kind === 'session' && e.at && e.at >= L.startOfDay(n) && e.at <= end7 && !seen[r.id]) { seen[r.id] = 1; week++; }
+      });
+    });
+    var fresh = recs.filter(function (r) { return r.freshman.level === '适合'; }).length;
+    var tiles = [
+      { k: '今天（' + L.fmtDate(n) + ' ' + L.weekdayOf(n) + '）', v: todayCount, s: '场活动', accent: true },
+      { k: '48 小时内截止', v: closing, s: '项待办', accent: false },
+      { k: '未来 7 天', v: week, s: '场活动', accent: false },
+      { k: '适合新生', v: fresh, s: '条（共 ' + recs.length + ' 条）', accent: false }
+    ];
+    host.innerHTML = tiles.map(function (t) {
+      return '<div class="kpi' + (t.accent ? ' accent' : '') + '"><div class="k">' + esc(t.k) + '</div>' +
+        '<div class="v">' + t.v + '</div><div class="s">' + esc(t.s) + '</div></div>';
+    }).join('');
+  }
+
+  /** 速览侧栏：宽屏粘在右侧，窄屏自动落到列表之后 */
+  function renderRail(n) {
+    var host = $('#rail');
+    if (!host) return;
+    var recs = allRecords();
+    var favs = favRecords();
+    var conf = L.detectConflicts(recs);
+    var mineConf = conf.groups.filter(function (g) {
+      return g.ids.filter(function (id) { return favorites.indexOf(id) >= 0; }).length >= 2;
+    });
+
+    var urgent = recs.filter(function (r) {
+      var c = L.signupState(r, n).code;
+      return c === 'closing_soon' || c === 'open';
+    }).sort(function (a, b) { return L.urgencyOf(a, n).rank - L.urgencyOf(b, n).rank; }).slice(0, 4);
+    var card1 = '<section class="railcard"><header><h3>最近的截止与开场' +
+      (urgent.length ? '<span class="pill-n">' + urgent.length + '</span>' : '') + '</h3></header>' +
+      (urgent.length ? urgent.map(function (r) {
+        var u = L.urgencyOf(r, n);
+        return '<div class="row"><div class="grow">' +
+          '<div class="t" data-action="open" data-id="' + esc(r.id) + '">' + esc(r.id + ' ' + r.title) + '</div>' +
+          '<div class="m">' + esc(u.text) + '</div></div>' +
+          '<button class="btn sm" data-action="open" data-id="' + esc(r.id) + '">详情</button></div>';
+      }).join('') : '<p class="small muted">当前没有还在报名期或临近截止的条目。</p>') +
+      '</section>';
+
+    var card2 = '<section class="railcard"><header><h3>我的日程' +
+      '<span class="pill-n">' + favs.length + '</span></h3></header>' +
+      (favs.length
+        ? '<p class="small muted" style="margin:2px 0 10px">已收藏 ' + favs.length + ' 条' +
+          (mineConf.length ? '，其中 <strong style="color:var(--danger)">' + mineConf.length + ' 组时间冲突</strong>' : '，没有检测到时间冲突') + '。</p>'
+        : '<p class="small muted" style="margin:2px 0 10px">点卡片右上角的 ★ 加入日程，会自动帮你查冲突、还能导出日历文件。</p>') +
+      '<div class="pill-row"><button class="btn sm primary" data-action="open-panel" data-value="agenda">打开我的日程</button>' +
+      '<button class="btn sm" data-action="open-panel" data-value="publish">我要发布</button></div></section>';
+
+    var s = L.stats(recs, n);
+    var srcKeys = Object.keys(s.bySource).sort(function (a, b) { return s.bySource[b] - s.bySource[a]; });
+    var maxSrc = srcKeys.reduce(function (m, k) { return Math.max(m, s.bySource[k]); }, 1);
+    var card3 = '<section class="railcard"><header><h3>来源分层与风险</h3></header>' +
+      srcKeys.map(function (k) {
+        var pct = Math.round(100 * s.bySource[k] / maxSrc);
+        return '<div class="minibar"><span class="lbl">' + esc(k) + '</span>' +
+          '<span class="track"><i style="width:' + Math.max(pct, 4) + '%"></i></span>' +
+          '<span class="num">' + s.bySource[k] + '</span></div>';
+      }).join('') +
+      (s.risky.length ? '<div class="tip risk" style="margin-top:10px"><span>🚩</span><span>有 ' + s.risky.length +
+        ' 条学生发布内容需要谨慎（' + s.risky.map(function (r) { return r.id; }).join('、') + '）</span></div>' : '') +
+      '<div class="pill-row" style="margin-top:4px"><button class="btn sm" data-action="open-panel" data-value="quality">查看信息质量说明</button></div></section>';
+
+    var card4 = '<section class="railcard"><header><h3>快速开始</h3></header><div class="pill-row">' +
+      '<button class="chip" data-action="set-window" data-value="today" aria-pressed="' + (state.window === 'today') + '">今天</button>' +
+      '<button class="chip" data-action="set-window" data-value="3d" aria-pressed="' + (state.window === '3d') + '">近 3 天</button>' +
+      '<button class="chip" data-action="set-window" data-value="week" aria-pressed="' + (state.window === 'week') + '">近 7 天</button>' +
+      '<button class="chip" data-action="toggle-quick" data-value="适合新生" aria-pressed="' + (state.quick.indexOf('适合新生') >= 0) + '">适合新生</button>' +
+      '<button class="chip" data-action="toggle-quick" data-value="直接去" aria-pressed="' + (state.quick.indexOf('直接去') >= 0) + '">不用报名</button>' +
+      '<button class="chip" data-action="clear-all">全部 ' + recs.length + ' 条</button>' +
+      '</div></section>';
+
+    host.innerHTML = card1 + card2 + card3 + card4;
+  }
+
   function renderAll() {
     renderBasis();
+    renderKpis(now());
     renderHero();
     renderToolbar();
     renderResults();
+    renderRail(now());
   }
 
   function onAction(ev) {
