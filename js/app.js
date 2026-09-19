@@ -93,6 +93,57 @@
   var published = STORE.read('published', []);
   var favorites = STORE.read('favorites', []);
 
+  /* =============== 评论（只存本机，刷新不丢） =============== */
+  var comments = STORE.read('comments', {});
+  function commentsOf(id) {
+    return (comments[id] || []).slice().sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  }
+  function commentCount(id) { return (comments[id] || []).length; }
+  function addComment(id, text) {
+    var list = comments[id] || (comments[id] = []);
+    list.push({
+      id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      at: new Date().toISOString(),
+      text: String(text).slice(0, 300)
+    });
+    STORE.write('comments', comments);
+  }
+  function removeComment(id, cid) {
+    comments[id] = (comments[id] || []).filter(function (c) { return c.id !== cid; });
+    STORE.write('comments', comments);
+  }
+  function relTime(iso) {
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return '';
+    var ms = Date.now() - t;
+    if (ms < 60000) return '刚刚';
+    if (ms < 3600000) return Math.floor(ms / 60000) + ' 分钟前';
+    if (ms < 86400000) return Math.floor(ms / 3600000) + ' 小时前';
+    if (ms < 7 * 86400000) return Math.floor(ms / 86400000) + ' 天前';
+    var d = new Date(t);
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function commentsHtml(rec) {
+    var list = commentsOf(rec.id);
+    return '<section class="comments" id="comments">' +
+      '<h3>💬 评论<span class="cnum">' + list.length + '</span></h3>' +
+      '<div class="clist" id="commentList">' +
+      (list.length ? list.map(function (c) {
+        return '<article class="citem">' +
+          '<div class="chead"><span class="who">本机用户</span>' +
+          '<span class="when" title="' + esc(new Date(c.at).toLocaleString()) + '">' + esc(relTime(c.at)) + '</span>' +
+          '<button class="btn sm danger" data-action="del-comment" data-id="' + esc(rec.id) + '" data-cid="' + esc(c.id) + '">删除</button></div>' +
+          '<div class="ctext">' + decorate(esc(c.text)) + '</div></article>';
+      }).join('') : '<p class="small muted">还没有评论。可以写下你的问题或补充，例如「训练营要不要自带电脑？」。</p>') +
+      '</div>' +
+      '<form class="cform" id="commentForm">' +
+      '<label class="hidden" for="commentInput">写评论</label>' +
+      '<textarea id="commentInput" maxlength="300" placeholder="写下你的评论 / 提问 / 补充信息（保存在本机，刷新不丢）"></textarea>' +
+      '<div class="cbar"><span class="small muted">评论只保存在你自己的浏览器里，不会上传</span>' +
+      '<button class="btn primary" type="submit">发表评论</button></div>' +
+      '</form></section>';
+  }
+
   function buildLocalRecord(p) {
     var start = p.date ? (p.date + 'T' + (p.startTime || '00:00')) : null;
     var end = (p.date && p.endTime) ? (p.date + 'T' + p.endTime) : null;
@@ -690,8 +741,10 @@
       '  <div class="pill-row" style="margin-top:16px">' +
       '    <button class="btn primary" data-action="toggle-fav" data-id="' + esc(rec.id) + '">' + (favorites.indexOf(rec.id) >= 0 ? '★ 已在日程' : '☆ 加入我的日程') + '</button>' +
       '    <button class="btn" data-action="copy-info" data-id="' + esc(rec.id) + '">复制活动信息</button>' +
+      '    <button class="btn" data-action="focus-comment" data-id="' + esc(rec.id) + '">💬 评论' + (commentCount(rec.id) ? ' ' + commentCount(rec.id) : '') + '</button>' +
       (rec.local ? '<button class="btn danger" data-action="delete-local" data-id="' + esc(rec.id) + '">删除这条本机发布</button>' : '') +
       '  </div>' +
+      commentsHtml(rec) +
       '</div>';
 
     var drawer = $('#drawer');
@@ -700,6 +753,22 @@
     $('#scrim').classList.remove('hidden');
     document.body.classList.add('no-scroll');
     $('.close', drawer).focus();
+
+    /* 评论表单：提交后写本机存储并重绘，刷新不丢 */
+    var cform = $('#commentForm');
+    if (cform) {
+      cform.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var box = $('#commentInput');
+        var text = box ? String(box.value || '').trim() : '';
+        if (!text) { toast('评论内容不能为空'); if (box) box.focus(); return; }
+        addComment(rec.id, text);
+        openDetail(rec.id, false);
+        toast('评论已发表（保存在本机，刷新不丢）');
+        var sec = $('#comments');
+        if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
   }
 
   function closeDetail(keepHash) {
@@ -1013,12 +1082,9 @@
     var t = document.documentElement.getAttribute('data-theme');
     return t === 'dark' ? 'dark' : 'light';
   }
-  function applyTheme(t, animate) {
+  function applyTheme(t) {
     var dark = t === 'dark';
-    if (animate) {
-      document.documentElement.classList.add('theme-anim');
-      setTimeout(function () { document.documentElement.classList.remove('theme-anim'); }, 320);
-    }
+    /* 立即切换：不再做颜色过渡（此前 0.28s 的过渡会让人觉得「慢半拍」） */
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
     STORE.write(THEME_KEY, dark ? 'dark' : 'light');
     var meta = document.getElementById('themeColor');
@@ -1034,7 +1100,7 @@
     var stored = STORE.read(THEME_KEY, null);
     var t = stored === 'dark' || stored === 'light' ? stored
       : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    applyTheme(t, false);
+    applyTheme(t);
   }
   /** 首屏 KPI 条：把「今天有几场 / 多久截止 / 一周多少 / 多少适合新生」提到最上面 */
   function renderKpis(n) {
@@ -1232,7 +1298,20 @@
         renderAll();
         break;
       }
-      case 'toggle-theme': applyTheme(currentTheme() === 'dark' ? 'light' : 'dark', true); break;
+      case 'focus-comment': {
+        var box = document.getElementById('commentInput');
+        if (box) { box.focus(); box.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        break;
+      }
+      case 'del-comment': {
+        if (window.confirm('删除这条评论？')) {
+          removeComment(id, el.getAttribute('data-cid'));
+          openDetail(id, false);
+          toast('已删除评论');
+        }
+        break;
+      }
+      case 'toggle-theme': applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'); break;
       case 'clock-reset': state.offsetDays = 0; STORE.write('clockOffsetDays', 0); renderAll(); break;
       default: break;
     }

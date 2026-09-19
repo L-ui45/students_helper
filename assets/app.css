@@ -610,10 +610,6 @@ section.block { margin: 22px 0 24px; }
 [data-theme="dark"] .checklist input { accent-color: var(--brand); }
 [data-theme="dark"] ::-webkit-scrollbar-thumb { background: #2b3650; background-clip: content-box; }
 [data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #3a4763; background-clip: content-box; }
-/* 主题切换时的柔和过渡（只过渡色彩，不做布局动画） */
-html.theme-anim, html.theme-anim * {
-  transition: background-color .28s var(--ease), color .28s var(--ease), border-color .28s var(--ease) !important;
-}
 
 /* 交互细节（浅色/深色共用） */
 .kpi { transition: transform .2s var(--ease), box-shadow .2s var(--ease); }
@@ -621,3 +617,25 @@ html.theme-anim, html.theme-anim * {
 .railcard { transition: border-color .2s var(--ease), box-shadow .2s var(--ease); }
 .railcard:hover { border-color: #d8e0f2; box-shadow: var(--shadow-2); }
 [data-theme="dark"] .railcard:hover { border-color: rgba(255, 255, 255, .18); }
+
+/* ---------------- 评论区（详情抽屉内） ---------------- */
+.comments { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 16px; }
+.comments h3 { font-size: 15px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.comments h3 .cnum {
+  font-size: 12px; color: var(--brand); background: var(--brand-soft);
+  border: 1px solid var(--brand-soft-2); border-radius: var(--pill); padding: 1px 8px;
+}
+.clist { display: grid; gap: 9px; }
+.citem {
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+[data-theme="dark"] .citem { background: rgba(255, 255, 255, .04); }
+.citem .chead { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.citem .who { font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+.citem .when { font-size: 12px; color: var(--muted-2); flex: 1 1 auto; }
+.citem .ctext { font-size: 14px; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cform { margin-top: 12px; display: grid; gap: 9px; }
+.cform textarea { min-height: 68px; }
+.cform .cbar { display: flex; align-items: center; gap: 10px; }
+.cform .cbar .small { flex: 1 1 auto; }

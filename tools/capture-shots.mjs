@@ -32,7 +32,8 @@ const SHOTS = [
   { name: '13-detail-06-unified', url: '/#id=06', w: 1280, h: 1000, mobile: false, viewport: true },
   { name: '14-time-basis', url: '/', w: 1280, h: 360, mobile: false, viewport: true },
   { name: '15-dark-home', url: '/', w: 1280, h: 900, mobile: false, viewport: true, pre: 'dark' },
-  { name: '16-dark-mobile', url: '/#id=24', w: 390, h: 844, mobile: true, dsf: 2, viewport: true, pre: 'dark' }
+  { name: '16-dark-mobile', url: '/#id=24', w: 390, h: 844, mobile: true, dsf: 2, viewport: true, pre: 'dark' },
+  { name: '17-detail-comment', url: '/#id=11', w: 1280, h: 900, mobile: false, viewport: true, pre: 'comment' }
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -88,6 +89,10 @@ for (const s of SHOTS) {
   await page.evalJs(`try { localStorage.setItem('radar.v1.theme', JSON.stringify('${wantTheme}')); } catch (e) {} return true;`);
   await page.send('Page.reload');
   await sleep(950);
+  if (s.pre === 'comment') {
+    await page.evalJs("const b=document.getElementById('commentInput'); if(b){b.value='想问一下：训练营要自带电脑吗？需要自己带笔记本吗？'; document.getElementById('commentForm').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));} return true;");
+    await sleep(500);
+  }
   await page.evalJs(`return document.querySelectorAll('.card,.todaycard,.tlday,.rawtable').length;`);
   const doc = await page.evalJs(`return { h: document.documentElement.scrollHeight, w: document.documentElement.scrollWidth,
     inner: window.innerWidth, overflow: document.documentElement.scrollWidth > window.innerWidth + 1 };`);

@@ -188,6 +188,47 @@ await evalJs(`document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',
 await sleep(200);
 ok('Esc 可关闭抽屉', await evalJs(`return document.getElementById('drawer').classList.contains('hidden');`));
 
+console.log('\n【详情评论区】');
+
+await evalJs(`location.hash = '#id=11'; return true;`);
+await sleep(320);
+ok('详情里有「评论」按钮与评论区', await evalJs(`
+  const d = document.getElementById('drawer');
+  return !!d.querySelector('[data-action="focus-comment"]') && !!document.getElementById('comments') &&
+         !!document.getElementById('commentForm') && !!document.getElementById('commentInput');`));
+ok('未评论时显示空态提示', await evalJs(`
+  return document.getElementById('commentList').textContent.indexOf('还没有评论') >= 0;`));
+ok('空评论不会写入（只输入空格时被拒绝）', (await evalJs(`
+  document.getElementById('commentInput').value = '   ';
+  document.getElementById('commentForm').dispatchEvent(new Event('submit', {cancelable:true, bubbles:true}));
+  return JSON.parse(localStorage.getItem('radar.v1.comments') || '{}')['11'] === undefined;`)) === true);
+await evalJs(`
+  document.getElementById('commentInput').value = '想问一下：训练营要自带电脑吗？';
+  document.getElementById('commentForm').dispatchEvent(new Event('submit', {cancelable:true, bubbles:true}));
+  return true;`);
+await sleep(420);
+ok('发表后评论区出现该评论', await evalJs(`
+  return document.getElementById('commentList').textContent.indexOf('训练营要自带电脑吗') >= 0;`));
+ok('评论计数同步（按钮与标题）', await evalJs(`
+  return document.querySelector('#drawer [data-action="focus-comment"]').textContent.indexOf('1') >= 0 &&
+         document.querySelector('.comments .cnum').textContent === '1';`));
+ok('评论写入了本机存储（刷新不丢的前提）', await evalJs(`
+  return JSON.parse(localStorage.getItem('radar.v1.comments'))['11'].length === 1;`));
+await send('Page.reload');
+await waitFor(`!!document.getElementById('comments')`, '刷新后详情自动打开');
+ok('刷新页面后评论仍然存在（持久化生效）', await evalJs(`
+  return document.getElementById('commentList').textContent.indexOf('训练营要自带电脑吗') >= 0;`));
+await evalJs(`
+  window.confirm = function(){ return true; };
+  document.querySelector('#drawer [data-action="del-comment"]').click();
+  return true;`);
+await sleep(380);
+ok('可以删除自己的评论', await evalJs(`
+  return document.getElementById('commentList').textContent.indexOf('训练营要自带电脑吗') < 0 &&
+         (JSON.parse(localStorage.getItem('radar.v1.comments'))['11'] || []).length === 0;`));
+await evalJs(`document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true})); return true;`);
+await sleep(200);
+
 console.log('\n【收藏与冲突检查】');
 
 await evalJs(`
@@ -348,6 +389,13 @@ await sleep(360);
 ok('点击可切换主题（' + t0 + ' → ' + t1 + '）', await evalJs(`
   return document.documentElement.getAttribute('data-theme') === '${t1}' &&
          document.getElementById('themeToggle').textContent.indexOf('${t1 === 'dark' ? '浅色' : '深色'}') >= 0;`));
+ok('切换是立即生效的（同一帧内颜色变量就变了，无过渡延迟）', await evalJs(`
+  const root = document.documentElement;
+  const before = getComputedStyle(root).getPropertyValue('--bg').trim();
+  root.setAttribute('data-theme', before === '#0b111c' ? 'light' : 'dark');
+  const after = getComputedStyle(root).getPropertyValue('--bg').trim();
+  root.setAttribute('data-theme', before === '#0b111c' ? 'dark' : 'light');
+  return before !== after && !root.classList.contains('theme-anim');`));
 ok('主题选择持久化到 localStorage（JSON 编码，首屏预置脚本能正确读取）', await evalJs(`return JSON.parse(localStorage.getItem('radar.v1.theme')) === '${t1}';`));
 if (t1 !== 'dark') { await evalJs(`document.getElementById('themeToggle').click(); return true;`); await sleep(360); }
 ok('深色配色真正生效（CSS 变量与卡片底色都变暗）', await evalJs(`
